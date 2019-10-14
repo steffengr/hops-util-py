@@ -215,6 +215,58 @@ def get_requests_verify(hostname, port):
     return False
 
 
+def prepare_requests(hostname_verification=True, trust_store_path=None):
+    global verify
+    global session
+    session = requests.session()
+    verify = get_requests_verify2(hostname_verification=hostname_verification,
+                                 trust_store_path=trust_store_path)
+
+
+def get_requests_verify2(hostname_verification=True, trust_store_path=None):
+    """
+    Get verification method for sending HTTP requests to Hopsworks.
+    Credit to https://gist.github.com/gdamjan/55a8b9eec6cf7b771f92021d93b87b2c
+    Returns:
+        if env var HOPS_UTIL_VERIFY is not false
+            then if hopsworks certificate is self-signed, return the path to the truststore (PEM)
+            else if hopsworks is not self-signed, return true
+        return false
+    """
+    if hostname_verification:
+        hostname, port = _get_host_port_pair()
+        hostname_idna = idna.encode(hostname)
+        sock = socket()
+
+        sock.connect((hostname, int(port)))
+        ctx = SSL.Context(SSL.SSLv23_METHOD)
+        ctx.check_hostname = False
+        ctx.verify_mode = SSL.VERIFY_NONE
+
+        sock_ssl = SSL.Connection(ctx, sock)
+        sock_ssl.set_connect_state()
+        sock_ssl.set_tlsext_host_name(hostname_idna)
+        sock_ssl.do_handshake()
+        cert = sock_ssl.get_peer_certificate()
+        crypto_cert = cert.to_cryptography()
+        sock_ssl.close()
+        sock.close()
+
+        try:
+            commonname = crypto_cert.subject.get_attributes_for_oid(NameOID.COMMON_NAME)[
+                0].value
+            issuer = crypto_cert.issuer.get_attributes_for_oid(NameOID.COMMON_NAME)[
+                0].value
+            if commonname == issuer and trust_store_path:
+                return trust_store_path
+            else:
+                return True
+        except x509.ExtensionNotFound:
+            return True
+
+    return False
+
+
 def send_request(method, resource, data=None, headers=None):
     """
     Sends a request to Hopsworks. In case of Unauthorized response, submit the request once more as jwt might not

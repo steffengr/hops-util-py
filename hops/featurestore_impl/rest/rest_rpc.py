@@ -107,6 +107,41 @@ def _get_featurestore_metadata(featurestore):
 
     return response_object
 
+
+def _http(resource_url, headers=None, method=constants.HTTP_CONFIG.HTTP_GET, data=None):
+    response = util.send_request(
+        method, resource_url, headers=headers, data=data)
+    response_object = response.json()
+
+    if (response.status_code // 100) != 2:
+        error_code, error_msg, user_msg = util._parse_rest_error(
+            response_object)
+        raise RestAPIError("Could not execute HTTP request (url: {}), server response: \n "
+                           "HTTP code: {}, HTTP reason: {}, error code: {}, error msg: {}, user msg: {}".format(
+                               resource_url, response.status_code, response.reason, error_code, error_msg, user_msg))
+    return response_object
+
+
+def _get_credentials(project_id):
+    """
+    Makes a REST call to hopsworks for getting the project user certificates needed to connect to services such as Hive
+
+    Args:
+        :project_name: id of the project
+
+    Returns:
+        JSON response
+
+    Raises:
+        :RestAPIError: if there was an error in the REST call to Hopsworks
+    """
+    return _http(constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_REST_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_PROJECT_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
+                 project_id + constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_PROJECT_CREDENTIALS_RESOURCE)
+
+
 def _get_project_info(project_name):
     """
     Makes a REST call to hopsworks to get all metadata of a project for the provided project.
@@ -120,24 +155,11 @@ def _get_project_info(project_name):
     Raises:
         :RestAPIError: if there was an error in the REST call to Hopsworks
     """
-    method = constants.HTTP_CONFIG.HTTP_GET
-    resource_url = (constants.DELIMITERS.SLASH_DELIMITER +
-                    constants.REST_CONFIG.HOPSWORKS_REST_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
-                    constants.REST_CONFIG.HOPSWORKS_PROJECT_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
-                    constants.REST_CONFIG.HOPSWORKS_PROJECT_INFO_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
-                    project_name)
-    response = util.send_request(method, resource_url)
-    response_object = response.json()
-
-    if response.status_code != 200:
-        error_code, error_msg, user_msg = util._parse_rest_error(response_object)
-        raise RestAPIError("Could not fetch project metadata for project: {} (url: {}), "
-                           "server response: \n "
-                           "HTTP code: {}, HTTP reason: {}, error code: {}, "
-                           "error msg: {}, user msg: {}".format(
-            project_name, resource_url, response.status_code, response.reason, error_code, error_msg, user_msg))
-
-    return response_object
+    return _http(constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_REST_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_PROJECT_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
+                 constants.REST_CONFIG.HOPSWORKS_PROJECT_INFO_RESOURCE + constants.DELIMITERS.SLASH_DELIMITER +
+                 project_name)
 
 def _pre_process_jobs_list(jobNames):
     """

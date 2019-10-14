@@ -1887,7 +1887,9 @@ def get_training_dataset_statistics(training_dataset_name, featurestore=None, tr
         core._get_featurestore_metadata(featurestore, update_cache=True)
         return core._do_get_training_dataset_statistics(training_dataset_name, featurestore, training_dataset_version)
 
-def connect(host, project_name, port = 443, region_name = constants.AWS.DEFAULT_REGION):
+def connect(host, project_name, port = 443, region_name = constants.AWS.DEFAULT_REGION,
+            secrets_store = 'parameterstore', hostname_verification=True, trust_store_path=None,
+            use_metadata_cache=False, cert_folder=''):
     """
     Connects to a feature store from a remote environment such as Amazon SageMaker
 
@@ -1900,16 +1902,37 @@ def connect(host, project_name, port = 443, region_name = constants.AWS.DEFAULT_
         :project_name: the name of the project hosting the feature store to be used
         :port: the REST port of the Hopsworks cluster
         :region_name: The name of the AWS region in which the required secrets are stored
+        :secrets_store: The secrets storage to be used. Either secretsmanager or parameterstore.
+        :hostname_verification: Enable or disable hostname verification. If a self-signed certificate was installed \
+        on Hopsworks then the trust store needs to be supplied using trust_store_path.
+        :trust_store_path: the trust store pem file for Hopsworks needed for self-signed certificates only
+        :use_metadata_cache: Whether the metadata cache should be used or not. If enabled some API calls may return \
+        outdated data.
+        :cert_folder: the folder in which to store the Hopsworks certificates.
 
     Returns:
         None
     """
-    os.environ[constants.ENV_VARIABLES.REMOTE_ENV_VAR] = 'True'
+    global update_cache_default
+    update_cache_default = not use_metadata_cache
+
     os.environ[constants.ENV_VARIABLES.REST_ENDPOINT_END_VAR] = host + ':' + str(port)
     os.environ[constants.ENV_VARIABLES.HOPSWORKS_PROJECT_NAME_ENV_VAR] = project_name
     os.environ[constants.ENV_VARIABLES.REGION_NAME_ENV_VAR] = region_name
+    os.environ[constants.ENV_VARIABLES.API_KEY_ENV_VAR] = util.get_secret(secrets_store, 'api-key')
+
+    util.prepare_requests(hostname_verification=hostname_verification, trust_store_path=trust_store_path)
+
     project_info = rest_rpc._get_project_info(project_name)
-    os.environ[constants.ENV_VARIABLES.HOPSWORKS_PROJECT_ID_ENV_VAR] = str(project_info['projectId'])
+    project_id = str(project_info['projectId'])
+    os.environ[constants.ENV_VARIABLES.HOPSWORKS_PROJECT_ID_ENV_VAR] = project_id
+
+    credentials = rest_rpc._get_credentials(project_id)
+    util.write_b64_cert_to_bytes(str(credentials['kStore']), path=os.path.join(cert_folder, 'keyStore.jks'))
+    util.write_b64_cert_to_bytes(str(credentials['tStore']), path=os.path.join(cert_folder, 'trustStore.jks'))
+
+    os.environ[constants.ENV_VARIABLES.CERT_FOLDER_ENV_VAR] = cert_folder
+    os.environ[constants.ENV_VARIABLES.CERT_KEY_ENV_VAR] = str(credentials['password'])
 
 
 def sync_hive_table_with_featurestore(featuregroup, description="", featurestore=None,
